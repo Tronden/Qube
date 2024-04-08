@@ -12,6 +12,7 @@
 # ------------------------------------- AVAILABLE FUNCTIONS --------------------------------#
 
 from QUBE import *
+from PID import *
 from logger import *
 from com import *
 from liveplot import *
@@ -29,22 +30,23 @@ qube.resetPendulumEncoder()
 
 # Enables logging - comment out to remove
 enableLogging()
-
 t_last = time()
 
-m_target = 5
-p_target = 7
+Voltage = 0
+m_target = 1000.0
+p_target = 0
 pid = PID()
+pid.set_setpoint(m_target)
 
 def control(data, lock):
-    global m_target, p_target, pid
+    global m_target, p_target, pid, Voltage
    
     while True:
         # Updates the qube - Sends and receives data
         qube.update()
-
+        
         # Gets the logdata and writes it to the log file
-        logdata = qube.getLogData(m_target, p_target)
+        logdata = qube.getLogData(m_target, p_target, Voltage)
         save_data(logdata)
 
         # Multithreading stuff that must happen. Dont mind it.
@@ -53,9 +55,10 @@ def control(data, lock):
 
         # Get deltatime
         dt = getDT()
-
-        ### Your code goes here
-
+        current_value = qube.getMotorRPM()
+        Voltage = pid.regulate(current_value, dt)
+        print(Voltage)
+        qube.setMotorVoltage(Voltage)
 
 def getDT():
     global t_last
@@ -63,7 +66,6 @@ def getDT():
     dt = t_now - t_last
     t_last += dt
     return dt
-
 
 def doMTStuff(data):
     packet = data[7]
@@ -76,7 +78,6 @@ def doMTStuff(data):
     new_data = qube.getPlotData(m_target, p_target)
     for i, item in enumerate(new_data):
         data[i].append(item)
-
 
 if __name__ == "__main__":
     _data = [[], [], [], [], [], [], [], Packet()]

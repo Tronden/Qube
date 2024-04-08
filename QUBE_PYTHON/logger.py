@@ -65,4 +65,3 @@ def save_data(data):
             "current": data[6],
         }
         csv_writer.writerow(info)
-    print(data)
