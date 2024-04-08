@@ -1,63 +1,79 @@
-# ------------------------------------- AVAILABLE FUNCTIONS --------------------------------#
-# qube.setRGB(r, g, b) - Sets the LED color of the QUBE. Color values range from [0, 999].
-# qube.setMotorSpeed(speed) - Sets the motor speed. Speed ranges from [-999, 999].
-# qube.setMotorVoltage(volts) - Applies the given voltage to the motor. Volts range from (-24, 24).
-# qube.resetMotorEncoder() - Resets the motor encoder in the current position.
-# qube.resetPendulumEncoder() - Resets the pendulum encoder in the current position.
-
-# qube.getMotorPosition() - Returns the cumulative angular positon of the motor.
-# qube.getPendulumPosition() - Returns the cumulative angular position of the pendulum.
-# qube.getMotorRPM() - Returns the newest rpm reading of the motor.
-# qube.getMotorCurrent() - Returns the newest reading of the motor's current.
-# ------------------------------------- AVAILABLE FUNCTIONS --------------------------------#
-
 from QUBE import *
-from PID import *
 from logger import *
 from com import *
 from liveplot import *
-from time import time
+import numpy as np
+import control as ctrl
 import threading
+from time import time
 
-# Replace with the Arduino port. Can be found in the Arduino IDE (Tools -> Port:)
+# Initialize QUBE
 port = "COM4"
 baudrate = 115200
 qube = QUBE(port, baudrate)
-
-# Resets the encoders in their current position.
 qube.resetMotorEncoder()
 qube.resetPendulumEncoder()
 
-# Enables logging - comment out to remove
-enableLogging()
+enableLogging()  # Enable or disable logging as needed
 t_last = time()
 
-Voltage = 0
-m_target = 1000.0
-p_target = 0
 pid = PID()
-pid.set_setpoint(m_target)
+
+# Control targets
+m_target = 900 # Target angle in degrees
+p_target = 0  # Not used in this example
+speed_target = 100  # Target speed in RPM (for SPEED_MODE)
+Voltage = 0  # Initial control action
+
+# System matrices
+A = np.array([[0, 1], [0, -48824]])
+B = np.array([[0], [294]])
+D = np.array([[0], [0]])
+
+# Control mode selection
+ANGLE_MODE = 1
+SPEED_MODE = 2
+control_mode = ANGLE_MODE
+
+# Adjust C matrix based on control mode
+if control_mode == ANGLE_MODE:
+    C = np.array([[1, 0]])  # Focus on angle for feedback
+    m_target = m_target  # Define your angle setpoint here
+elif control_mode == SPEED_MODE:
+    C = np.array([[0, 1]])  # Focus on speed for feedback
+    m_target = speed_target  # Use speed target for control
+
+# Pole placement for state feedback
+poles = np.array([-85, -100])
+K = ctrl.place(A, B, poles)
 
 def control(data, lock):
-    global m_target, p_target, pid, Voltage
-   
+    global m_target, K, t_last, Voltage
+    
     while True:
-        # Updates the qube - Sends and receives data
         qube.update()
-        
-        # Gets the logdata and writes it to the log file
         logdata = qube.getLogData(m_target, p_target, Voltage)
         save_data(logdata)
 
-        # Multithreading stuff that must happen. Dont mind it.
+        dt = getDT()
+
         with lock:
             doMTStuff(data)
 
-        # Get deltatime
-        dt = getDT()
-        current_value = qube.getMotorRPM()
-        Voltage = pid.regulate(current_value, dt)
-        print(Voltage)
+        current_angle = qube.getMotorAngle()
+        current_speed = qube.getMotorRPM()
+
+        # Choose the correct state based on control mode
+        if control_mode == ANGLE_MODE:
+            current_state = np.array([current_angle, 0])
+            desired_state = np.array([m_target, 0])
+        elif control_mode == SPEED_MODE:
+            current_state = np.array([0, current_speed])
+            desired_state = np.array([0, speed_target])
+        
+        state_error = current_state - desired_state
+        control_action = -np.dot(K, state_error)
+        Voltage = control_action / 10000
         qube.setMotorVoltage(Voltage)
 
 def getDT():

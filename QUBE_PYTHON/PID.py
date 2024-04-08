@@ -4,10 +4,23 @@ import sys
 class PID:
     def __init__(self):
         print("Initializing PID...")
+
+        self.kp = 0.0
+        self.ki = 0.0
+        self.kd = 0.0
+        self.windup_guard = 0.0
+        """""
+        self.kp = 0.003
+        self.ki = 0.005
+        self.kd = 0.0003
+        self.windup_guard = 1000.0
+
+        
         self.kp = 0.008
         self.ki = 0.0025
         self.kd = 0.0001
         self.windup_guard = 100000.0
+        """""
         self.lastIntegral = 0
         self.lastError = 0
         self.pkp = 0.0
