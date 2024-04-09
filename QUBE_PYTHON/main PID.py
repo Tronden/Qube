@@ -14,41 +14,26 @@ qube = QUBE(port, baudrate)
 qube.resetMotorEncoder()
 qube.resetPendulumEncoder()
 
-enableLogging()  # Enable or disable logging as needed
+enableLogging()  
 t_last = time()
 
-pid = PID()
-
-# Control targets
-m_target = 1000 # Target angle in degrees
-p_target = 0  # Not used in this example
-s_target = 1000 # Target speed in RPM (for SPEED_MODE)
-Voltage = 0  # Initial control action
-
-# Original system matrices
-A = np.array([[0, 1, 0],
-              [0, -48824, 0],
-              [-1, 0, 0]])
-
-B = np.array([[0], [294], [0]])
+m_target = 90 #Angle
+p_target = 0
+s_target = 2000 #RPM
+Voltage = 0
+integral_error = 0
 
 # Control mode selection
 ANGLE_MODE = 1
 SPEED_MODE = 2
-control_mode = SPEED_MODE
+control_mode = ANGLE_MODE
 
-# Adjust C matrix based on control mode
-if control_mode == ANGLE_MODE:
-    C = np.array([[1, 0, 0]])  # Focus on angle for feedback
-elif control_mode == SPEED_MODE:
-    C = np.array([[0, 1, 0]])  # Focus on speed for feedback
-
-poles = np.array([-5-8.92j, -5+8.92j, -50])
-K = ctrl.place(A, B, poles)
+K1 = 0.02
+K2 = 0.0165
+K3 = 0.00177
 
 def control(data, lock):
-    global m_target, K, t_last, Voltage
-    
+    global m_target, s_target, K1, K2, K3, t_last, Voltage
     integral_error = 0
 
     while True:
@@ -75,27 +60,23 @@ def control(data, lock):
         Speed_Error = Speed_Target - current_speed
         
         # Update the integral of the error
-        integral_error += (Pos_Error * dt / 100) + (Speed_Error * dt / 100)
+        integral_error += (Pos_Error * dt) + (Speed_Error * dt)
         integral_error = max(min(integral_error, 100), -100)  # Limit the integral error
 
-        current_state = np.array([current_angle, current_speed, integral_error])  
-        desired_state = np.array([Pos_Target, Speed_Target, 0])
-        state_error = current_state - desired_state
-        print(K)
-        Voltage = -np.dot(K, state_error) / 1000
-        print(Voltage)
+        Voltage = K1 * Pos_Error + K2 * Speed_Error + K3 * integral_error
         qube.setMotorVoltage(Voltage)
-
+        
 def getDT():
     global t_last
     t_now = time()
     dt = t_now - t_last
-    t_last += dt
+    t_last = t_now  # Update the last time stamp for the next iteration
     return dt
 
 def doMTStuff(data):
+    # Assuming packet and pid are handled correctly elsewhere
     packet = data[7]
-    pid.copy(packet.pid)
+    # pid.copy(packet.pid)
     if packet.resetEncoders:
         qube.resetMotorEncoder()
         qube.resetPendulumEncoder()
