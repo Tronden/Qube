@@ -17,20 +17,20 @@ qube.resetPendulumEncoder()
 enableLogging()  
 t_last = time()
 
-m_target = 90 #Angle
+m_target = 9000 #Angle
 p_target = 0
-s_target = 2000 #RPM
+s_target = 200 #RPM
 Voltage = 0
 integral_error = 0
 
 # Control mode selection
 ANGLE_MODE = 1
 SPEED_MODE = 2
-control_mode = ANGLE_MODE
+control_mode = SPEED_MODE
 
-K1 = 0.02
-K2 = 0.0165
-K3 = 0.00177
+K1 = 0.020563
+K2 = 0.016586
+K3 = 0.001778
 
 def control(data, lock):
     global m_target, s_target, K1, K2, K3, t_last, Voltage
@@ -52,16 +52,18 @@ def control(data, lock):
         if control_mode == ANGLE_MODE:
             Pos_Target = m_target
             Speed_Target = 0
+            Value = 100
         elif control_mode == SPEED_MODE:
             Pos_Target = current_angle
             Speed_Target = s_target
+            Value = 10000
 
         Pos_Error = Pos_Target - current_angle
         Speed_Error = Speed_Target - current_speed
         
         # Update the integral of the error
         integral_error += (Pos_Error * dt) + (Speed_Error * dt)
-        integral_error = max(min(integral_error, 100), -100)  # Limit the integral error
+        integral_error = max(min(integral_error, Value), -Value)  # Limit the integral error
 
         Voltage = K1 * Pos_Error + K2 * Speed_Error + K3 * integral_error
         qube.setMotorVoltage(Voltage)
