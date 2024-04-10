@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt   # MATLAB plotting functions
+import matplotlib.pyplot as plt
 import control
 import control.matlab
 import numpy as np
@@ -12,14 +12,12 @@ Ca = np.matrix([[1, 0, 0]])
 
 Tstep = 0.1
 
-poles = [-0.8+1.3j, -0.8-1.3j, -8] ## [-5, -4.4, -4.2]
+poles = [-0.4+0.66j, -0.4-0.66j, -4]
 Kfeedback = control.place(Aa, Ba, poles)
 feedbackA = Aa - Ba@Kfeedback
 
-A = np.matrix( [[0, 1],
-                [0, 1.3]] )
-B =  np.matrix( [[0],
-                [294]] )
+A = np.matrix( [[0, 1],[0, 1.3]] )
+B =  np.matrix( [[0],[294]] )
 C =  np.matrix( [[1, 0]] )
 
 sys = control.ss(A,B,C,0)
