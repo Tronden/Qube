@@ -1,3 +1,5 @@
+#Hentet litt kode fra https://hackaday.io/project/175294/files?fbclid=IwAR0jCo5pFQu7vpAGqGHUPpqMjJQj8zbowYHmuBuW1W0Crmcir9w37C6BFp0
+
 import matplotlib.pyplot as plt
 import control
 import control.matlab
