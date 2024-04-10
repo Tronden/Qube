@@ -14,31 +14,44 @@ qube = QUBE(port, baudrate)
 qube.resetMotorEncoder()
 qube.resetPendulumEncoder()
 
-enableLogging()  
+enableLogging()  # Enable or disable logging as needed
 t_last = time()
 
-m_target = 9000 #Angle
-p_target = 0
-s_target = 200 #RPM
-Voltage = 0
-integral_error = 0
+pid = PID()
+
+# Control targets
+m_target = 0 # Target angle in degrees
+s_target = 0 # Target speed in RPM
+Voltage = 0  # Initial control action
+
+target_change_delay = 15
+last_target_change_time = time()
+target_reached = False
+target_reached_threshold = 10 # degrees or rpm
 
 # Control mode selection
 ANGLE_MODE = 1
 SPEED_MODE = 2
-control_mode = SPEED_MODE
+control_mode = ANGLE_MODE
 
-K1 = 0.020563
-K2 = 0.016586
-K3 = 0.001778
+# Original system matrices
+A = np.array([[0, 1, 0],
+              [0, 1.3, 0],
+              [-1, 0, 0]])
+B = np.array([[0], [294], [0]])
+C = np.array([[1, 0, 0]]) if control_mode == ANGLE_MODE else np.array([[0, 1, 0]])
+
+poles = np.array([-0.4+0.42j, -0.4-0.42j, -4])
+K = ctrl.place(A, B, poles)
 
 def control(data, lock):
-    global m_target, s_target, K1, K2, K3, t_last, Voltage
+    global K, m_target, s_target, t_last, Voltage, target_reached
+    
     integral_error = 0
 
     while True:
         qube.update()
-        logdata = qube.getLogData(m_target, p_target, Voltage)
+        logdata = qube.getLogData(m_target, s_target, Voltage)
         save_data(logdata)
 
         dt = getDT()
@@ -50,41 +63,64 @@ def control(data, lock):
         current_speed = qube.getMotorRPM()
 
         if control_mode == ANGLE_MODE:
-            Pos_Target = m_target
-            Speed_Target = 0
+            s_target = 0
             Value = 100
         elif control_mode == SPEED_MODE:
-            Pos_Target = current_angle
-            Speed_Target = s_target
-            Value = 10000
+            m_target = current_angle
+            Value = 1000
 
-        Pos_Error = Pos_Target - current_angle
-        Speed_Error = Speed_Target - current_speed
+        Pos_Error = m_target - current_angle
+        Speed_Error = s_target - current_speed
         
         # Update the integral of the error
-        integral_error += (Pos_Error * dt) + (Speed_Error * dt)
+        integral_error += -((Pos_Error + Speed_Error) * dt)
         integral_error = max(min(integral_error, Value), -Value)  # Limit the integral error
+        Voltage = K[0][0] * Pos_Error + K[0][1] * Speed_Error + K[0][2] * integral_error
+        print(K[0][0] * Pos_Error, K[0][1] * Speed_Error, K[0][2] * integral_error, Voltage)
+        if control_mode == ANGLE_MODE:
+            # Check if target is reached within threshold
+            if abs(Pos_Error) <= target_reached_threshold:
+                if not target_reached:
+                    target_reached = True
+                    last_target_change_time = time()
+            else:
+                target_reached = False
 
-        Voltage = K1 * Pos_Error + K2 * Speed_Error + K3 * integral_error
+        elif control_mode == SPEED_MODE:
+            # Check if target is reached within threshold
+            if abs(Speed_Error) <= target_reached_threshold:
+                if not target_reached:
+                    target_reached = True
+                    last_target_change_time = time()
+            else:
+                target_reached = False
+
+        # Change target after delay if target is reached
+        if target_reached and (time() - last_target_change_time) >= target_change_delay:
+            if control_mode == ANGLE_MODE:
+                m_target += 6000  # Define new_target_angle as needed
+            elif control_mode == SPEED_MODE:
+                s_target += 500 # Target speed in RPM (for SPEED_MODE)
+            target_reached = False  # Reset to wait for new target to be reached
+
         qube.setMotorVoltage(Voltage)
-        
+
 def getDT():
     global t_last
     t_now = time()
     dt = t_now - t_last
-    t_last = t_now  # Update the last time stamp for the next iteration
+    t_last += dt
     return dt
 
 def doMTStuff(data):
-    # Assuming packet and pid are handled correctly elsewhere
     packet = data[7]
-    # pid.copy(packet.pid)
+    pid.copy(packet.pid)
     if packet.resetEncoders:
         qube.resetMotorEncoder()
         qube.resetPendulumEncoder()
         packet.resetEncoders = False
 
-    new_data = qube.getPlotData(m_target, p_target)
+    new_data = qube.getPlotData(m_target, s_target)
     for i, item in enumerate(new_data):
         data[i].append(item)
 

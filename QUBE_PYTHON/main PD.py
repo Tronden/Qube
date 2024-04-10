@@ -20,22 +20,26 @@ t_last = time()
 pid = PID()
 
 # Control targets
-m_target = 1000 # Target angle in degrees
+m_target = 0 # Target angle in degrees
 p_target = 0  # Not used in this example
-s_target = 1000 # Target speed in RPM (for SPEED_MODE)
+s_target = 0 # Target speed in RPM (for SPEED_MODE)
 Voltage = 0  # Initial control action
 
-# Original system matrices
-A = np.array([[0, 1, 0],
-              [0, -48824, 0],
-              [-1, 0, 0]])
+target_change_delay = 5  # seconds
+last_target_change_time = time()
+target_reached = False
+target_reached_threshold = 10  # degrees, adjust based on your system's accuracy
 
-B = np.array([[0], [294], [0]])
+# Original system matrices
+A = np.array([[0, 1],
+              [0, 1.3]])
+
+B = np.array([[0], [294]])
 
 # Control mode selection
 ANGLE_MODE = 1
 SPEED_MODE = 2
-control_mode = SPEED_MODE
+control_mode = ANGLE_MODE
 
 # Adjust C matrix based on control mode
 if control_mode == ANGLE_MODE:
@@ -43,13 +47,11 @@ if control_mode == ANGLE_MODE:
 elif control_mode == SPEED_MODE:
     C = np.array([[0, 1, 0]])  # Focus on speed for feedback
 
-poles = np.array([-5-8.92j, -5+8.92j, -50])
+poles = np.array([-0.8+1.3j, -0.8-1.3j])
 K = ctrl.place(A, B, poles)
 
 def control(data, lock):
-    global m_target, K, t_last, Voltage
-    
-    integral_error = 0
+    global K, m_target, s_target, t_last, Voltage, target_reached
 
     while True:
         qube.update()
@@ -74,16 +76,34 @@ def control(data, lock):
         Pos_Error = Pos_Target - current_angle
         Speed_Error = Speed_Target - current_speed
         
-        # Update the integral of the error
-        integral_error += (Pos_Error * dt / 100) + (Speed_Error * dt / 100)
-        integral_error = max(min(integral_error, 100), -100)  # Limit the integral error
+        Voltage = K[0][0] * Pos_Error + K[0][1] * Speed_Error
+        print(K[0][0] * Pos_Error, K[0][1] * Speed_Error, Voltage)
+        if control_mode == ANGLE_MODE:
+            # Check if target is reached within threshold
+            if abs(Pos_Error) <= target_reached_threshold:
+                if not target_reached:
+                    target_reached = True
+                    last_target_change_time = time()
+            else:
+                target_reached = False
 
-        current_state = np.array([current_angle, current_speed, integral_error])  
-        desired_state = np.array([Pos_Target, Speed_Target, 0])
-        state_error = current_state - desired_state
-        print(K)
-        Voltage = -np.dot(K, state_error) / 1000
-        print(Voltage)
+        elif control_mode == SPEED_MODE:
+            # Check if target is reached within threshold
+            if abs(Speed_Error) <= target_reached_threshold:
+                if not target_reached:
+                    target_reached = True
+                    last_target_change_time = time()
+            else:
+                target_reached = False
+
+        # Change target after delay if target is reached
+        if target_reached and (time() - last_target_change_time) >= target_change_delay:
+            if control_mode == ANGLE_MODE:
+                m_target += 6000  # Define new_target_angle as needed
+            elif control_mode == SPEED_MODE:
+                s_target += 500 # Target speed in RPM (for SPEED_MODE)
+            target_reached = False  # Reset to wait for new target to be reached
+
         qube.setMotorVoltage(Voltage)
 
 def getDT():
